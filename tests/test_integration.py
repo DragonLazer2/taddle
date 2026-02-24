@@ -3,6 +3,7 @@ import os
 import time
 
 from taddle import Event, Severity, Taddle, TaddleConfig
+from taddle.registry import load_all_systems
 
 
 def test_full_lifecycle(watch_dir, log_dir):
@@ -60,3 +61,75 @@ def test_full_lifecycle(watch_dir, log_dir):
     for line in lines:
         data = json.loads(line)  # each line is valid JSON
         assert "event_type" in data
+
+
+def test_registration_lifecycle(watch_dir, log_dir, tmp_path, monkeypatch):
+    """Verify dashboard registry is updated through attach -> start -> stop -> detach."""
+    # Redirect registry to temp dir
+    test_registry_dir = tmp_path / ".taddle"
+    test_registry_dir.mkdir()
+    test_registry_file = test_registry_dir / "systems.json"
+    monkeypatch.setattr("taddle.registry.REGISTRY_DIR", test_registry_dir)
+    monkeypatch.setattr("taddle.registry.REGISTRY_FILE", test_registry_file)
+    monkeypatch.setattr("taddle.core.register_system",
+                        __import__("taddle.registry", fromlist=["register_system"]).register_system)
+    monkeypatch.setattr("taddle.core.update_system_status",
+                        __import__("taddle.registry", fromlist=["update_system_status"]).update_system_status)
+    monkeypatch.setattr("taddle.core.unregister_system",
+                        __import__("taddle.registry", fromlist=["unregister_system"]).unregister_system)
+
+    config = TaddleConfig(
+        watch_paths=[str(watch_dir)],
+        log_dir=str(log_dir),
+        log_to_stdout=False,
+        system_name="test-system",
+    )
+
+    t = Taddle()
+
+    # Attach — should register with status "attached"
+    t.attach(config)
+    systems = load_all_systems()
+    assert "test-system" in systems
+    assert systems["test-system"]["status"] == "attached"
+    assert systems["test-system"]["log_dir"] == str(log_dir)
+
+    # Start — status should become "monitoring"
+    t.start()
+    systems = load_all_systems()
+    assert systems["test-system"]["status"] == "monitoring"
+
+    # Stop — status should become "stopped"
+    t.stop()
+    systems = load_all_systems()
+    assert systems["test-system"]["status"] == "stopped"
+
+    # Detach — status should become "detached"
+    t.detach()
+    systems = load_all_systems()
+    assert systems["test-system"]["status"] == "detached"
+
+
+def test_no_registration_without_system_name(watch_dir, log_dir, tmp_path, monkeypatch):
+    """Systems without system_name should not appear in the registry."""
+    test_registry_dir = tmp_path / ".taddle"
+    test_registry_dir.mkdir()
+    test_registry_file = test_registry_dir / "systems.json"
+    monkeypatch.setattr("taddle.registry.REGISTRY_DIR", test_registry_dir)
+    monkeypatch.setattr("taddle.registry.REGISTRY_FILE", test_registry_file)
+
+    config = TaddleConfig(
+        watch_paths=[str(watch_dir)],
+        log_dir=str(log_dir),
+        log_to_stdout=False,
+        # system_name is empty (default)
+    )
+
+    t = Taddle()
+    t.attach(config)
+    t.start()
+    t.stop()
+    t.detach()
+
+    systems = load_all_systems()
+    assert systems == {}

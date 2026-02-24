@@ -9,6 +9,7 @@ from .events import Event, EventType, Severity
 from .logger import TaddleLogger
 from .monitors.base import BaseMonitor
 from .monitors.filesystem import FileSystemMonitor
+from .registry import register_system, unregister_system, update_system_status
 from .utils import EventDeduplicator, compute_event_id
 
 
@@ -43,12 +44,21 @@ class Taddle:
         self._deduplicator = EventDeduplicator(config.dedup_window_seconds)
         self._monitors = [FileSystemMonitor(config, self._emit_event)]
         self._state = _State.ATTACHED
+        if self._config.system_name:
+            register_system(
+                self._config.system_name,
+                self._config.log_dir,
+                self._config.log_filename,
+                self._config.watch_paths,
+            )
 
     def detach(self) -> None:
         if self._state == _State.MONITORING:
             self.stop()
         if self._state != _State.ATTACHED:
             raise RuntimeError(f"Cannot detach: state is {self._state.value}, expected ATTACHED")
+        if self._config and self._config.system_name:
+            unregister_system(self._config.system_name)
         if self._logger:
             self._logger.shutdown()
         self._monitors.clear()
@@ -73,6 +83,8 @@ class Taddle:
             )
             self._emit_event(ev)
         self._state = _State.MONITORING
+        if self._config and self._config.system_name:
+            update_system_status(self._config.system_name, "monitoring")
 
     def stop(self) -> None:
         if self._state != _State.MONITORING:
@@ -89,6 +101,8 @@ class Taddle:
             )
             self._emit_event(ev)
         self._state = _State.ATTACHED
+        if self._config and self._config.system_name:
+            update_system_status(self._config.system_name, "stopped")
 
     def scan(self) -> list[Event]:
         if self._state not in (_State.ATTACHED, _State.MONITORING):

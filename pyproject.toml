@@ -16,5 +16,11 @@ dev = [
     "pytest>=7.0",
 ]
 
+[project.scripts]
+taddle-dashboard = "taddle.dashboard.__main__:main"
+
+[project.gui-scripts]
+taddle-dashboard-gui = "taddle.dashboard.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["taddle*"]

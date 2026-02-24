@@ -17,6 +17,7 @@ class TaddleConfig:
     log_to_stdout: bool = False
     dedup_window_seconds: float = 60.0
     stdout_severity_threshold: str = "WARNING"
+    system_name: str = ""
 
     def validate(self) -> list[str]:
         errors: list[str] = []
